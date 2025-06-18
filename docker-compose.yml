@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # PostgreSQL база данных
+  db:
+    image: postgres:15-alpine
+    container_name: devops_postgres
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - devops_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: devops_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - devops_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PHP-FPM
+  php:
+    build:
+      context: .
+      dockerfile: Dockerfile.php
+    container_name: devops_php
+    volumes:
+      - ./public:/var/www/html
+      - ./composer.json:/var/www/composer.json
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DB_HOST: db
+      DB_DATABASE: testdb
+      DB_USERNAME: testuser
+      DB_PASSWORD: testpass
+    networks:
+      - devops_network
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Nginx
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: devops_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./public:/var/www/html
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - devops_network
+    depends_on:
+      - php
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  devops_network:
+    driver: bridge

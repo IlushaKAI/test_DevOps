@@ -1,0 +1,66 @@
+- name: Install Docker on local Debian
+  hosts: localhost
+  become: true
+  connection: local
+
+  vars:
+    docker_gpg_key_path: /etc/apt/keyrings/docker.asc
+    docker_repo_path: /etc/apt/sources.list.d/docker.list
+
+  tasks:
+    - name: Ensure required packages are installed
+      apt:
+        name:
+          - ca-certificates
+          - curl
+          - git
+        state: present
+        update_cache: yes
+
+    - name: Create Docker keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download Docker GPG key
+      get_url:
+        url: https://download.docker.com/linux/debian/gpg
+        dest: "{{ docker_gpg_key_path }}"
+        mode: '0644'
+
+    - name: Get Debian codename (VERSION_CODENAME)
+      command: bash -c ". /etc/os-release && echo $VERSION_CODENAME"
+      register: debian_codename
+      changed_when: false
+
+    - name: Add Docker repository
+      copy:
+        dest: "{{ docker_repo_path }}"
+        content: |
+          deb [arch={{ ansible_architecture }} signed-by={{ docker_gpg_key_path }}] https://download.docker.com/linux/debian {{ debian_codename.stdout }} stable
+
+    - name: Update apt package cache
+      apt:
+        update_cache: yes
+
+    - name: Install Docker packages
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: latest
+
+    - name: Clone sample project from GitHub
+      git:
+        repo: https://github.com/nginx-proxy/nginx-proxy.git
+        dest: /opt/nginx-proxy
+        version: main
+
+    - name: Run docker compose
+      command: docker compose up -d
+      args:
+        chdir: /opt/nginx-proxy
